@@ -111,6 +111,24 @@ describe('buildMockExplanation', () => {
     const sentences = out.explanation.split(/[.!?]+/).filter((s) => s.trim().length > 0);
     expect(sentences.length).toBeLessThanOrEqual(2);
   });
+
+  it('B5: no explanation for any reasonCode contains "booking request" or "proceed"', () => {
+    const reasonCodes: ExplanationInput['reasonCode'][] = [
+      'AVAILABLE',
+      'OVERLAP',
+      'BLOCKED',
+      'INVALID_INTERVAL',
+      'TOO_LONG',
+      'PAST_START',
+      'MISSING_INPUT',
+    ];
+    for (const code of reasonCodes) {
+      const isAvailable = code === 'AVAILABLE';
+      const out = buildMockExplanation({ ...validInput, reasonCode: code, isAvailable });
+      expect(out.explanation).not.toMatch(/booking request/i);
+      expect(out.explanation).not.toMatch(/proceed/i);
+    }
+  });
 });
 
 describe('validateExplanationOutput', () => {

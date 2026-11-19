@@ -88,7 +88,7 @@ export function buildMockExplanation(input: ExplanationInput): ExplanationOutput
 
   let explanation: string;
   if (isAvailable) {
-    explanation = `${roomLabel} is free from ${start} to ${end}. You can proceed with a booking request.`;
+    explanation = `${roomLabel} is free from ${start} to ${end}. This is only an availability check; nothing is booked.`;
   } else {
     explanation = `${roomLabel} ${phrase} for ${start} to ${end}. Choose a different time or room.`;
   }

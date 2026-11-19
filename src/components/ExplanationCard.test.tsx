@@ -173,10 +173,25 @@ describe('Explain availability UI', () => {
     await act(async () => {
       clickExplain();
     });
-    await waitFor(() => {
-      expect(screen.getByTestId('explanation-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('explanation-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Note is too long/);
+  });
+
+  it('E12: validation failure shows the inline alert and no explanation-card', async () => {
+    render(<App />);
+    selectRoom(B204);
+    setField('Start time', '11:00');
+    setField('End time', '12:00');
+    clickCheck();
+
+    setField('Note (optional)', 'x'.repeat(141));
+
+    await act(async () => {
+      clickExplain();
     });
-    expect(screen.getByText(/note must not exceed 140/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('explanation-card')).not.toBeInTheDocument();
+    expect(screen.queryByText(/deterministic reason as fallback/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Note is too long/);
   });
 
   it('E10: a new check clears a stale explanation before a new one loads', async () => {

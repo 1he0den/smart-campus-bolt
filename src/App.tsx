@@ -53,6 +53,7 @@ export default function App() {
   const [usedFallback, setUsedFallback] = useState(false);
   const [mockMode, setMockMode] = useState<MockMode>('normal');
   const [noteInput, setNoteInput] = useState('');
+  const [explainError, setExplainError] = useState<string | null>(null);
   const explainRequestId = useRef(0);
 
   const attendees = parseAttendees(attendeesInput);
@@ -75,6 +76,7 @@ export default function App() {
     setExplanation(null);
     setExplanationLoading(false);
     setUsedFallback(false);
+    setExplainError(null);
   };
 
   const withResetResult = (setter: (value: string) => void) => (value: string) => {
@@ -139,8 +141,10 @@ export default function App() {
 
     const validation = validateExplanationInput(rawInput);
     if (!validation.ok) {
-      setExplanation({ explanation: validation.error });
-      setUsedFallback(true);
+      setExplainError(formatExplainError(validation.error, rawInput, result));
+      setExplanation(null);
+      setUsedFallback(false);
+      setExplanationLoading(false);
       return;
     }
 
@@ -168,6 +172,20 @@ export default function App() {
       }
     }
   };
+
+  function formatExplainError(
+    _error: string,
+    raw: { note?: string; start: string; end: string },
+    res: AvailabilityResult | null,
+  ): string {
+    if (raw.note && raw.note.length > NOTE_MAX) {
+      return `Note is too long (${raw.note.length}/${NOTE_MAX} characters). Shorten it and try again.`;
+    }
+    if (res && !res.available && res.reason.startsWith('Please enter current, start, and end times.')) {
+      return 'Enter start and end times before requesting an explanation.';
+    }
+    return 'Check failed. Review your inputs and try again.';
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 antialiased">
@@ -391,6 +409,11 @@ export default function App() {
             >
               <Sparkles size={18} /> Explain availability
             </button>
+            {explainError && (
+              <p role="alert" className="mt-2 text-sm text-red-700">
+                {explainError}
+              </p>
+            )}
           </div>
         )}
 
