@@ -17,11 +17,19 @@ Vite + React + TypeScript + Tailwind CSS. Icons come from lucide-react. Import p
 - `src/types.ts`: shared types `Room` (includes `equipment: string[]`), `Booking`, `AvailabilityResult`.
 - `src/components/TimeField.tsx`: labelled time input used for the three time fields.
 - `src/components/RoomFilters.tsx`: attendee count input and required-equipment checkboxes.
-- `src/App.tsx`: the single-page UI. It holds the filters, room selector with empty state, time inputs, check button, result card, and existing-bookings list. Changing any filter or the selected room clears the result. It also contains the time-string parsing helper `fromHHMM`.
+- `src/components/MockModeSelector.tsx`: demo test control for the mock explanation adapter (normal / timeout / error / invalid output).
+- `src/components/ExplanationCard.tsx`: renders the mock explanation in a separate card labeled "AI-style explanation (mock) - not a booking confirmation". Never shows an availability status.
+- `src/App.tsx`: the single-page UI. It holds the filters, room selector with empty state, time inputs, check button, result card, optional note input with live character counter, explain button, explanation card, and existing-bookings list. Changing any filter, the selected room, or any time clears both the result and the explanation. It also contains the time-string parsing helper `fromHHMM`.
+- `src/lib/explanationTypes.ts`: shared types for the mock explanation feature (`ReasonCode`, `ExplanationInput`, `ExplanationOutput`, `MockMode`).
+- `src/lib/deriveReasonCode.ts`: pure function that maps an `AvailabilityResult` to a structured `ReasonCode` using anchored matching on the existing reason strings. Does not modify `checkAvailability.ts`.
+- `src/lib/explainAvailability.ts`: the mock explanation adapter. Validates input (rejects empty, malformed, or over-long), builds text from structured data only, validates output (type, length ≤240 chars, ≤2 sentences, agrees with `isAvailable`), and falls back to the deterministic reason on any failure. Has a 3-second timeout. The `note` field is never executed and never changes the status.
 - `src/main.tsx`: application entry point. `src/index.css`: global styles.
 - `src/lib/checkAvailability.test.ts`: unit tests for the booking rules (T01-T20).
 - `src/lib/roomFilters.test.ts`: unit tests for attendee parsing and room filtering.
-- `src/App.test.tsx`: UI integration tests (U1-U9) using Testing Library.
+- `src/lib/deriveReasonCode.test.ts`: unit tests for `deriveReasonCode` that run real scenarios through `checkAvailability` (R01-R10).
+- `src/lib/explainAvailability.test.ts`: unit tests for input/output validation, mock modes, and the 3-second timeout using fake timers.
+- `src/App.test.tsx`: UI integration tests (U1-U10) using Testing Library.
+- `src/components/ExplanationCard.test.tsx`: UI tests for the explain feature (E1-E11), including stale-async guards and fallback behavior.
 - `src/test/setup.ts`: shared test setup (jest-dom matchers).
 
 Test stack: Vitest with jsdom.
@@ -41,7 +49,7 @@ These must hold after every change.
 
 - Prefer minimal, localized changes.
 - Use pure functions for booking logic.
-- Introduce at most two justified patterns. Do not add Strategy, Adapter, Singleton, or Factory without a concrete, documented need.
+- Introduce at most two justified patterns. Do not add Strategy, Singleton, or Factory without a concrete, documented need. The Adapter pattern is justified for the mock explanation feature only: a single contract (`explainAvailability`) with a swappable mock/real implementation behind it. No other patterns are introduced.
 - Keep booking rules separate from UI concerns. `checkAvailability.ts` must not import React or UI components.
 - Do not introduce new libraries unless absolutely necessary. Check `package.json` before using any package.
 - Preserve existing labels, headings, and validation messages exactly as written.
@@ -51,9 +59,9 @@ These must hold after every change.
 
 ## Forbidden Scope Changes
 
-- No backend, authentication, database, booking creation, or other persistence. The tool only checks availability and does not save bookings.
+- No backend, authentication, database, booking creation, or other persistence. The tool only checks availability and does not save bookings. The only exception is a client-side mock explanation adapter (`src/lib/explainAvailability.ts`) that builds explanatory text from structured data already in the browser — it makes no network calls and stores nothing.
 - No backend or database packages (for example `@supabase/supabase-js`, Prisma, Drizzle, or any ORM/SDK) may be added to `package.json` or imported anywhere in the project. The existing `@supabase/supabase-js` dependency is unused and should not be wired up.
-- No secrets, API keys, tokens, or credentials in code, config, or environment files. Do not create or commit `.env` files.
+- No secrets, API keys, tokens, or credentials in code, config, or environment files. Do not create or commit `.env` files. The mock explanation adapter must never use real API keys or secrets.
 - No external deployments, publishing, domain changes, or pushing to remote services. The project runs locally only.
 - No unnecessary redesign of layout, colors, or copy.
 - Do not rebuild the application from scratch.

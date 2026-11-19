@@ -27,6 +27,7 @@ All rooms and bookings are fictional and stored in code. The application has no 
 - **F3, Blocked room handling:** blocked rooms can appear in the list but are never reported as available.
 - **F4, Empty-state feedback:** when no room matches the filters, a clear message is shown instead of an empty list.
 - **F5, Result reset:** the availability result is cleared when the selected room or any filter changes, so a stale result is never shown.
+- **F6, Explain availability (mock):** after a check, an optional "Explain availability" button renders a short AI-style explanation in a separate card. The explanation is built by a client-side mock adapter from the structured availability result only — it never changes the Available/Unavailable verdict and makes no network calls. A demo "Mock mode" selector (normal / timeout / error / invalid output) simulates adapter failures. On any failure or timeout (3-second limit), the deterministic reason text is shown as fallback. The optional note field is treated as untrusted: it is never executed and never changes the status.
 - Responsive layout built with Tailwind CSS breakpoints. The mobile layout has not yet been checked by hand (see Known Limitations).
 
 ## 3. Project Structure
@@ -43,8 +44,9 @@ All rooms and bookings are fictional and stored in code. The application has no 
 └── src/
     ├── main.tsx                     Application entry point
     ├── App.tsx                      Single-page UI: filters, room selector, time inputs,
-    │                                check button, result card, existing bookings list
-    ├── App.test.tsx                 UI integration tests (U1 to U9) using Testing Library
+    │                                check button, result card, optional note input,
+    │                                explain button, explanation card, existing bookings list
+    ├── App.test.tsx                 UI integration tests (U1 to U10) using Testing Library
     ├── data.ts                      Fictional rooms, equipment options, bookings,
     │                                and constants (120-minute limit, 1440-minute day)
     ├── types.ts                     Shared types: Room, Booking, AvailabilityResult
@@ -52,18 +54,26 @@ All rooms and bookings are fictional and stored in code. The application has no 
     ├── vite-env.d.ts                Vite type declarations
     ├── components/
     │   ├── TimeField.tsx            Labelled time input used for current, start, and end times
-    │   └── RoomFilters.tsx          Attendee count input and required-equipment checkboxes
+    │   ├── RoomFilters.tsx          Attendee count input and required-equipment checkboxes
+    │   ├── MockModeSelector.tsx     Demo test control for the mock explanation adapter
+    │   ├── ExplanationCard.tsx       Mock explanation display card (separate from result card)
+    │   └── ExplanationCard.test.tsx UI tests for the explain feature (E1 to E11)
     ├── lib/
     │   ├── checkAvailability.ts     Pure booking rules (AC1 to AC5) and bookingsForRoom helper
     │   ├── checkAvailability.test.ts Unit tests for the booking rules (T01 to T20)
     │   ├── roomFilters.ts           Pure attendee parsing and room filtering (F1, F2)
     │   ├── roomFilters.test.ts      Unit tests for attendee parsing and room filtering
-    │   └── format.ts                Time formatting helper (toHHMM)
+    │   ├── format.ts                Time formatting helper (toHHMM)
+    │   ├── explanationTypes.ts      Shared types for the mock explanation feature
+    │   ├── deriveReasonCode.ts      Pure function mapping AvailabilityResult to ReasonCode
+    │   ├── deriveReasonCode.test.ts Tests for deriveReasonCode (R01 to R10)
+    │   ├── explainAvailability.ts   Mock explanation adapter (validation, timeout, fallback)
+    │   └── explainAvailability.test.ts Tests for the mock adapter (input/output, modes, timeout)
     └── test/
         └── setup.ts                 Shared test setup (jest-dom matchers)
 ```
 
-Design note: filtering (`roomFilters.ts`) is kept separate from availability (`checkAvailability.ts`). A room can match the filters and still be reported as unavailable. `checkAvailability.ts` does not import React or UI code.
+Design note: filtering (`roomFilters.ts`) is kept separate from availability (`checkAvailability.ts`). A room can match the filters and still be reported as unavailable. `checkAvailability.ts` does not import React or UI code. The mock explanation adapter (`explainAvailability.ts`) builds text from the structured result of `checkAvailability` via `deriveReasonCode`; it never changes the availability verdict.
 
 ## 4. Installation
 
@@ -130,7 +140,7 @@ The booking rules and feature requirements are defined in `AGENTS.md`.
 ## 8. Verification Results
 
 - **Baseline:** 20 of 20 tests passed across 2 test files, at the start of Assignment #04.
-- **Final:** 49 of 49 tests passed across 3 test files (`npm test -- --reporter=verbose`).
+- **Final:** test counts updated after adding the mock explanation feature. Run `npm test -- --reporter=verbose` for the current count across all test files (`checkAvailability.test.ts` with T01–T20, `roomFilters.test.ts`, `App.test.tsx` with U1–U10, `deriveReasonCode.test.ts` with R01–R10, `explainAvailability.test.ts`, and `ExplanationCard.test.tsx` with E1–E11).
 - **Typecheck (`npm run typecheck`):** passed with no errors.
 - **Lint (`npm run lint`):** passed with no errors.
 - **Build (`npm run build`):** succeeded. The build prints a notice that the Browserslist and caniuse-lite data is outdated; this does not stop the build.
@@ -139,6 +149,7 @@ The booking rules and feature requirements are defined in `AGENTS.md`.
 
 - **Fictional data only:** rooms and bookings are defined in `src/data.ts`. Real campus data is not connected.
 - **No booking persistence:** the tool checks availability only. Bookings are not saved, and changes are lost on reload.
+- **Mock explanation is not AI:** the "Explain availability" feature uses a deterministic client-side mock adapter. It builds text from structured data only, makes no network calls, and never changes the availability verdict. A real AI-backed explanation is not implemented.
 - **No real-world performance or accessibility audit:** no performance measurement or formal accessibility audit has been carried out.
 - **Mobile layout not manually verified:** the responsive classes are in place, but the layout has not been checked by hand at narrow widths.
 - **Time parsing:** time input handling could be stricter.

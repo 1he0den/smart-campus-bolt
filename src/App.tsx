@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Building2,
   CalendarCheck,
@@ -7,6 +7,7 @@ import {
   DoorClosed,
   MapPin,
   SearchX,
+  Sparkles,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -15,8 +16,20 @@ import type { AvailabilityResult, Room } from '@/types';
 import { bookingsForRoom, checkAvailability } from '@/lib/checkAvailability';
 import { toHHMM } from '@/lib/format';
 import { findMatchingRooms, parseAttendees } from '@/lib/roomFilters';
+import { deriveReasonCode } from '@/lib/deriveReasonCode';
+import {
+  explainAvailability,
+  validateExplanationInput,
+  withTimeout,
+  EXPLANATION_TIMEOUT_MS,
+} from '@/lib/explainAvailability';
+import type { ExplanationOutput, MockMode } from '@/lib/explanationTypes';
 import TimeField from '@/components/TimeField';
 import RoomFilters from '@/components/RoomFilters';
+import MockModeSelector from '@/components/MockModeSelector';
+import ExplanationCard from '@/components/ExplanationCard';
+
+const NOTE_MAX = 140;
 
 const fromHHMM = (str: string): number | null => {
   const match = /^(\d{2}):(\d{2})$/.exec(str);
@@ -35,6 +48,12 @@ export default function App() {
   const [endTime, setEndTime] = useState('11:00');
   const [currentTime, setCurrentTime] = useState('09:00');
   const [result, setResult] = useState<AvailabilityResult | null>(null);
+  const [explanation, setExplanation] = useState<ExplanationOutput | null>(null);
+  const [explanationLoading, setExplanationLoading] = useState(false);
+  const [usedFallback, setUsedFallback] = useState(false);
+  const [mockMode, setMockMode] = useState<MockMode>('normal');
+  const [noteInput, setNoteInput] = useState('');
+  const explainRequestId = useRef(0);
 
   const attendees = parseAttendees(attendeesInput);
   const matchingRooms = findMatchingRooms(rooms, attendeesInput, requiredEquipment);
@@ -51,9 +70,17 @@ export default function App() {
     [selectedRoomId],
   );
 
+  const clearExplanation = () => {
+    explainRequestId.current += 1;
+    setExplanation(null);
+    setExplanationLoading(false);
+    setUsedFallback(false);
+  };
+
   const withResetResult = (setter: (value: string) => void) => (value: string) => {
     setter(value);
     setResult(null);
+    clearExplanation();
   };
 
   const applyFilters = (nextAttendeesInput: string, nextEquipment: string[]) => {
@@ -64,6 +91,7 @@ export default function App() {
       setSelectedRoomId(nextRooms[0]?.id ?? '');
     }
     setResult(null);
+    clearExplanation();
   };
 
   const toggleEquipment = (item: string) => {
@@ -76,6 +104,7 @@ export default function App() {
   const handleCheck = () => {
     if (!currentTime || !startTime || !endTime) {
       setResult({ available: false, reason: 'Please enter current, start, and end times.' });
+      clearExplanation();
       return;
     }
     const start = fromHHMM(startTime);
@@ -83,9 +112,61 @@ export default function App() {
     const now = fromHHMM(currentTime);
     if (start === null || end === null || now === null) {
       setResult({ available: false, reason: 'Please enter current, start, and end times.' });
+      clearExplanation();
       return;
     }
-    setResult(checkAvailability(selectedRoom, { start, end }, now, bookings));
+    const checkResult = checkAvailability(selectedRoom, { start, end }, now, bookings);
+    setResult(checkResult);
+    clearExplanation();
+  };
+
+  const handleExplain = async () => {
+    if (!result) return;
+
+    const reasonCode = deriveReasonCode(result);
+    const fallbackReason = result.available
+      ? `${selectedRoom?.name ?? 'This room'} is free from ${startTime} to ${endTime}.`
+      : result.reason;
+
+    const rawInput = {
+      roomLabel: selectedRoom?.name ?? 'This room',
+      start: startTime,
+      end: endTime,
+      isAvailable: result.available,
+      reasonCode,
+      note: noteInput.trim() || undefined,
+    };
+
+    const validation = validateExplanationInput(rawInput);
+    if (!validation.ok) {
+      setExplanation({ explanation: validation.error });
+      setUsedFallback(true);
+      return;
+    }
+
+    const requestId = explainRequestId.current + 1;
+    explainRequestId.current = requestId;
+    setExplanationLoading(true);
+    setExplanation(null);
+    setUsedFallback(false);
+
+    try {
+      const output = await withTimeout(
+        explainAvailability(validation.value, mockMode, fallbackReason),
+        EXPLANATION_TIMEOUT_MS,
+      );
+      if (explainRequestId.current !== requestId) return;
+      setExplanation(output);
+      setUsedFallback(output.explanation === fallbackReason);
+    } catch {
+      if (explainRequestId.current !== requestId) return;
+      setExplanation({ explanation: fallbackReason });
+      setUsedFallback(true);
+    } finally {
+      if (explainRequestId.current === requestId) {
+        setExplanationLoading(false);
+      }
+    }
   };
 
   return (
@@ -161,6 +242,7 @@ export default function App() {
                         onClick={() => {
                           setSelectedRoomId(room.id);
                           setResult(null);
+                          clearExplanation();
                         }}
                         aria-pressed={active}
                         className={[
@@ -225,6 +307,27 @@ export default function App() {
             ({DAY_MINUTES} minutes). The start time must be after the current time.
           </p>
 
+          {/* Note (optional) */}
+          <div className="mt-4">
+            <label htmlFor="note" className="block text-sm font-medium mb-1.5">
+              Note (optional)
+            </label>
+            <input
+              id="note"
+              type="text"
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white text-sm px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/40"
+              placeholder="Add a note for the explanation (ignored by the mock)"
+            />
+            <p className="mt-1 text-xs text-slate-400" data-testid="note-counter">
+              {noteInput.length}/{NOTE_MAX} characters
+              {noteInput.length > NOTE_MAX && ' — over the limit, will be rejected'}
+            </p>
+          </div>
+
+          <MockModeSelector value={mockMode} onChange={setMockMode} />
+
           {/* Check button */}
           <div className="mt-5">
             <button
@@ -276,6 +379,27 @@ export default function App() {
             </div>
           </section>
         )}
+
+        {/* Explain availability button — only after a check */}
+        {result && (
+          <div>
+            <button
+              type="button"
+              onClick={handleExplain}
+              disabled={explanationLoading}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-medium text-sm px-6 py-2.5 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-amber-400/40 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Sparkles size={18} /> Explain availability
+            </button>
+          </div>
+        )}
+
+        {/* AI-style explanation card (mock) */}
+        <ExplanationCard
+          explanation={explanation}
+          loading={explanationLoading}
+          usedFallback={usedFallback}
+        />
 
         {/* Existing bookings for selected room */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
